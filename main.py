@@ -18,7 +18,10 @@ def setup_env_and_proxy() -> str:
     if not api_key:
         print("❌ 未检测到 GOOGLE_API_KEY，请检查 .env 文件。")
         sys.exit(1)
-    return api_key
+
+
+    AI_MODEL_ID = os.getenv("AI_MODEL_ID")    
+    return api_key,AI_MODEL_ID
 
 def read_material() -> str:
     """直接读取本地 rawdata/materials.md"""
@@ -34,10 +37,10 @@ def read_material() -> str:
         sys.exit(1)
     return content
 
-def call_model(api_key: str, material: str) -> str:
+def call_model(api_key: str,ai_model_id: str, material: str) -> str:
     """第一轮：基于素材生成公众号初稿"""
     client = genai.Client(api_key=api_key)
-    
+
     # 这里直接写死你的写作人设
     system_prompt = """
     你是一位拥有百万粉丝的资深公众号主笔。
@@ -54,7 +57,7 @@ def call_model(api_key: str, material: str) -> str:
     user_prompt = f"以下是我的原始素材，请帮我写成文章：\n\n{material}"
 
     response = client.models.generate_content(
-        model="gemini-2.5-flash", 
+        model=ai_model_id, 
         contents=user_prompt,
         config=types.GenerateContentConfig(
             system_instruction=system_prompt,
@@ -63,7 +66,7 @@ def call_model(api_key: str, material: str) -> str:
     )
     return (response.text or "").strip()
 
-def remove_ai_flavor(api_key: str, draft: str) -> str:
+def remove_ai_flavor(api_key: str, ai_model_id: str,draft: str) -> str:
     """第二轮：专门洗稿，增加“人味儿”"""
     client = genai.Client(api_key=api_key)
 
@@ -79,7 +82,7 @@ def remove_ai_flavor(api_key: str, draft: str) -> str:
     """
     
     response = client.models.generate_content(
-        model="gemini-2.5-flash", 
+        model=ai_model_id, 
         contents=f"请把以下初稿里的‘AI味’洗掉，让它读起来更有张力：\n\n{draft}",
         config=types.GenerateContentConfig(
             system_instruction=editor_prompt,
@@ -100,7 +103,7 @@ def save_output(content: str, suffix: str, ts: str) -> Path:
 def main() -> None:
     print("🚀 微信公众号自动化写作助手启动...")
     
-    api_key = setup_env_and_proxy()
+    api_key,ai_model_id = setup_env_and_proxy()
     ts = datetime.now().strftime("%m%d_%H%M%S")
 
     # 1. 获取素材
@@ -110,13 +113,13 @@ def main() -> None:
     try:
         # 2. 生成初稿
         print("🧠 [1/2] 正在构建文章初稿...")
-        draft = call_model(api_key, material)
+        draft = call_model(api_key,ai_model_id, material)
         save_output(draft, "draft", ts)
         print("✅ 初稿生成并已保存。")
 
         # 3. 润色去AI味
         print("🧽 [2/2] 主编正在进行‘去AI味’深度加工...")
-        final_text = remove_ai_flavor(api_key, draft)
+        final_text = remove_ai_flavor(api_key,ai_model_id, draft)
         final_path = save_output(final_text, "final", ts)
 
         print("\n" + "="*40)
